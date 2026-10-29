@@ -91,6 +91,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
 .glass { background: rgba(0,0,0,.45); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); color: #fff; }
 .ctop { position: absolute; left: 0; right: 0; top: 0; padding: 16px; display: flex; justify-content: space-between; align-items: center; z-index: 3; }
 .cbtn { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 0; cursor: pointer; }
+.camnote { position: absolute; left: 16px; right: 16px; top: 72px; border-radius: 14px; padding: 10px 14px; font-size: 13px; line-height: 1.35; z-index: 3; }
 .pill { border-radius: 999px; padding: 6px 12px; font-size: 14px; font-weight: 600; display: flex; gap: 4px; align-items: center; }
 .cbottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 40px 0 calc(28px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; align-items: center; background: linear-gradient(transparent, rgba(0,0,0,.55)); z-index: 3; }
 .shutter { width: 92px; height: 92px; border-radius: 50%; border: 6px solid #fff; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; touch-action: none; padding: 0; transition: transform .12s; }
@@ -176,6 +177,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
         <span class="pill glass"><span class="mi mo" style="font-size:16px">location_on</span><span id="gps">Mansion</span></span>
         <button type="button" class="cbtn glass" aria-label="Flash"><span class="mi" style="font-size:20px">flash_off</span></button>
       </div>
+      <div class="camnote glass" id="camNote" hidden></div>
       <div class="talk glass" id="talk"><p id="words"></p><div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
       <div class="cards" id="cards"></div>
       <div class="thumbfly" id="thumb"></div>
@@ -223,9 +225,8 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   /* ---------- state ---------- */
   var $ = function (id) { return document.getElementById(id); };
   var job, sceneIx, items, srNext, timerStart, lastEnd = 0;
-  /* real camera + voice: phones, on a page allowed to use them; otherwise the scenes act it out */
+  /* real camera + voice on a page allowed to use them; otherwise the scenes act it out */
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   var real = false, stream = null, video = null, rec = null, heard = '';
   function reset() {
     job = { name: 'Boiler inspection', where: 'Mansion', eq: '', sr: 'SR570308', since: Date.now() - (24 * 60 + 10) * 1000 };
@@ -258,22 +259,36 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   });
 
   /* ---------- camera ---------- */
+  function note(t) { $('camNote').textContent = t || ''; $('camNote').hidden = !t; }
   function startCamera() {
-    if (!coarse || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }).then(function (s) {
+    note('');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      note(window.isSecureContext ? 'This browser can\'t use the camera here. Open the link in Chrome or Safari.' : 'Camera needs the https link.');
+      return;
+    }
+    /* camera and mic asked together, so nothing pops up mid-hold */
+    var md = navigator.mediaDevices, v = { facingMode: { ideal: 'environment' } };
+    md.getUserMedia({ video: v, audio: true }).catch(function () { return md.getUserMedia({ video: v }); }).then(function (s) {
       if ($('cam').hidden) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
       stream = s; real = true;
+      var mic = s.getAudioTracks();
+      mic.forEach(function (t) { t.stop(); s.removeTrack(t); }); /* only wanted the yes; speech opens its own mic */
+      if (!mic.length) note('Mic blocked: holding still works, but no words. Allow the mic in site settings.');
+      else if (!SR) note('This browser can\'t turn speech into words. Try Chrome on Android or Safari on iPhone.');
       video = document.createElement('video');
       video.muted = true; video.autoplay = true; video.playsInline = true; video.setAttribute('playsinline', '');
       video.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
       video.srcObject = s;
       $('vf').innerHTML = ''; $('vf').style.animation = 'none'; $('vf').style.inset = '0'; $('vf').appendChild(video);
       var p = video.play(); if (p && p.catch) p.catch(function () {});
-    }).catch(function () { real = false; });
+    }).catch(function (e) {
+      real = false;
+      note(e && e.name === 'NotAllowedError' ? 'Camera blocked: allow it in site settings, then reopen. Showing pretend scenes.' : 'No camera found. Showing pretend scenes.');
+    });
   }
   function stopCamera() {
     if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
-    stream = null; video = null; real = false;
+    stream = null; video = null; real = false; note('');
     $('vf').style.animation = ''; $('vf').style.inset = '';
   }
   function scene() { return ORDER[sceneIx % ORDER.length]; }
@@ -309,7 +324,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
         try {
           rec = new SR(); rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true;
           rec.onresult = function (ev) { var t = ''; for (var i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript; heard = t.trim(); $('words').textContent = heard; };
-          rec.onerror = function () {};
+          rec.onerror = function (ev) { if (ev.error !== 'no-speech' && ev.error !== 'aborted') note('Speech didn\'t work (' + ev.error + ').'); };
           rec.start();
         } catch (x) { rec = null; }
       }
@@ -455,6 +470,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   });
   $('restart').addEventListener('click', reset);
   reset();
+  $('openCam').click(); /* opens on the camera, the job behind it */
 })();
 </script>
 </body></html>
