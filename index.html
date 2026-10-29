@@ -183,8 +183,8 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
       <div class="thumbfly" id="thumb"></div>
       <button type="button" class="cbtn glass kbd" id="kbd" aria-label="Type instead"><span class="mi" style="font-size:24px">keyboard</span></button>
       <div class="cbottom">
-        <button type="button" class="shutter" id="shutter" aria-label="Tap for photo · hold to talk"><i></i></button>
-        <div class="hint" id="hint">Tap for photo · hold to talk</div>
+        <button type="button" class="shutter" id="shutter" aria-label="Tap: photo · Hold: photo + voice note"><i></i></button>
+        <div class="hint" id="hint">Tap: photo · Hold: photo + voice note</div>
       </div>
       <div class="sheet" id="sheet" hidden>
         <div class="box glass">
@@ -223,7 +223,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   /* buildings, metres north/east of where the camera is first opened: Guest House has no building coordinates
      on file, so the prototype lays the campus out around you to try walking between them */
   var BUILDINGS = [['Mansion', 0, 0], ['Villa', 120, 0], ['MSO Building', 0, 120], ['Treatment Center', -120, 0], ['Fleet Parking', 0, -120]];
-  var HINT = 'Tap for photo · hold to talk';
+  var HINT = 'Tap: photo · Hold: photo + voice note';
   var UNITS = { 'Office 8': 'Carrier 45MAHAQ12XA3', 'Office 9': 'Carrier 45MAHAQ12XA3' };
 
   /* ---------- state ---------- */
@@ -345,13 +345,13 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
           rec.start();
         } catch (x) { rec = null; }
       }
-      typeT = setInterval(function () { $('hint').textContent = '0:0' + Math.min(9, Math.floor((Date.now() - t0) / 1000)); }, 200);
+      typeT = setInterval(function () { $('hint').textContent = '0:0' + Math.min(9, Math.floor((Date.now() - t0) / 1000)) + ' · let go to save'; }, 200);
       return;
     }
     var said = SAID[shot].words, n = 0;
     typeT = setInterval(function () {
       n = Math.min(said.length, n + 2); $('words').textContent = said.slice(0, n);
-      $('hint').textContent = '0:0' + Math.min(9, Math.floor((Date.now() - t0) / 1000));
+      $('hint').textContent = '0:0' + Math.min(9, Math.floor((Date.now() - t0) / 1000)) + ' · let go to save';
     }, 55);
   }
   function up() {
