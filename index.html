@@ -109,6 +109,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
 .talk p { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.35; min-height: 24px; }
 .wave { margin-top: 10px; display: flex; gap: 4px; justify-content: center; height: 34px; align-items: center; }
 .wave i { width: 4px; border-radius: 2px; background: #fff; height: 8px; animation: wv .8s ease-in-out infinite alternate; }
+.wave.live i { animation: none; transition: height .07s linear; }
 .wave i:nth-child(2n) { animation-delay: .2s; } .wave i:nth-child(3n) { animation-delay: .4s; } .wave i:nth-child(5n) { animation-delay: .1s; }
 @keyframes wv { from { height: 6px; } to { height: 32px; } }
 .cards { position: absolute; left: 12px; right: 12px; bottom: 190px; display: flex; flex-direction: column-reverse; gap: 8px; z-index: 3; }
@@ -233,6 +234,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   var here = 'Mansion', origin = null, geoWatch = null;
   var real = false, stream = null, video = null, rec = null, heard = '';
+  var mic = null, actx = null, meterSrc = null, meterRaf = 0, level = 0;
   function reset() {
     job = { name: 'Boiler inspection', where: 'Mansion', eq: '', sr: 'SR570308', since: Date.now() - (24 * 60 + 10) * 1000 };
     sceneIx = 0; items = []; srNext = 572614;
@@ -276,9 +278,10 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
     md.getUserMedia({ video: v, audio: true }).catch(function () { return md.getUserMedia({ video: v }); }).then(function (s) {
       if ($('cam').hidden) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
       stream = s; real = true;
-      var mic = s.getAudioTracks();
-      mic.forEach(function (t) { t.stop(); s.removeTrack(t); }); /* only wanted the yes; speech opens its own mic */
-      if (!mic.length) note('Mic blocked: holding still works, but no words. Allow the mic in site settings.');
+      var a = s.getAudioTracks();
+      a.forEach(function (t) { s.removeTrack(t); });
+      mic = a.length ? new MediaStream(a) : null; /* kept open to drive the bars */
+      if (!a.length) note('Mic blocked: holding still works, but no words. Allow the mic in site settings.');
       else if (!SR) note('This browser can\'t turn speech into words. Try Chrome on Android or Safari on iPhone.');
       video = document.createElement('video');
       video.muted = true; video.autoplay = true; video.playsInline = true; video.setAttribute('playsinline', '');
@@ -293,7 +296,8 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   }
   function stopCamera() {
     if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
-    stream = null; video = null; real = false; note(''); stopFinding();
+    if (mic) mic.getTracks().forEach(function (t) { t.stop(); });
+    stream = null; video = null; mic = null; meterSrc = null; real = false; note(''); stopFinding();
     $('vf').style.animation = ''; $('vf').style.inset = '';
   }
   function findMe() {
@@ -308,6 +312,34 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
     }, function () {}, { enableHighAccuracy: true, maximumAge: 5000 });
   }
   function stopFinding() { if (geoWatch !== null && navigator.geolocation) navigator.geolocation.clearWatch(geoWatch); geoWatch = null; }
+  /* the bars follow how loud you are: the mic's level when there is one, else a bump each time words arrive */
+  var BARS = [.5, .75, .9, 1, .85, 1, .9, .7, .5];
+  function startMeter() {
+    var bars = [].slice.call(document.querySelectorAll('.wave i')), an = null, buf = null;
+    try {
+      if (actx && mic) {
+        if (!meterSrc) meterSrc = actx.createMediaStreamSource(mic);
+        an = actx.createAnalyser(); an.fftSize = 512; meterSrc.connect(an); buf = new Uint8Array(an.fftSize);
+      }
+    } catch (x) { an = null; }
+    document.querySelector('.wave').classList.add('live'); level = 0;
+    (function frame() {
+      if (an) {
+        an.getByteTimeDomainData(buf);
+        var sum = 0; for (var i = 0; i < buf.length; i++) { var v = (buf[i] - 128) / 128; sum += v * v; }
+        level = Math.max(level * .8, Math.min(1, Math.sqrt(sum / buf.length) * 6));
+      } else level *= .92;
+      bars.forEach(function (b, i) { b.style.height = (6 + level * 28 * BARS[i] * (.75 + Math.random() * .25)) + 'px'; });
+      meterRaf = requestAnimationFrame(frame);
+    })();
+    return function () { if (an) try { meterSrc.disconnect(an); } catch (x) {} };
+  }
+  var meterStop = null;
+  function stopMeter() {
+    cancelAnimationFrame(meterRaf); if (meterStop) meterStop(); meterStop = null;
+    var w = document.querySelector('.wave'); w.classList.remove('live');
+    [].forEach.call(w.children, function (b) { b.style.height = ''; });
+  }
   function scene() { return ORDER[sceneIx % ORDER.length]; }
   function setScene() { if (!real) $('vf').innerHTML = SCENES[scene()]; }
   function snap() {
@@ -325,6 +357,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
     e.preventDefault();
     if (pressed || Date.now() - lastEnd < 700) return; /* one press = one request */
     pressed = true; sh.classList.add('down');
+    if (mic) try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch (x) {}
     shot = snap();
     $('flash').classList.remove('go'); void $('flash').offsetWidth; $('flash').classList.add('go');
     $('thumb').innerHTML = pic(shot); $('thumb').classList.add('on');
@@ -340,11 +373,16 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
       if (SR) {
         try {
           rec = new SR(); rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true;
-          rec.onresult = function (ev) { var t = ''; for (var i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript; heard = t.trim(); $('words').textContent = heard; };
-          rec.onerror = function (ev) { if (ev.error !== 'no-speech' && ev.error !== 'aborted') note('Speech didn\'t work (' + ev.error + ').'); };
+          rec.onresult = function (ev) { level = 1; var t = ''; for (var i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript; heard = t.trim(); $('words').textContent = heard; };
+          rec.onerror = function (ev) {
+            /* some phones won't share the mic: give it to speech, the bars fall back to words arriving */
+            if (ev.error === 'audio-capture' && mic) { mic.getTracks().forEach(function (t) { t.stop(); }); mic = null; meterSrc = null; var r = rec; setTimeout(function () { if (talking && r === rec) try { r.start(); } catch (x) {} }, 100); return; }
+            if (ev.error !== 'no-speech' && ev.error !== 'aborted') note('Speech didn\'t work (' + ev.error + ').');
+          };
           rec.start();
         } catch (x) { rec = null; }
       }
+      meterStop = startMeter();
       typeT = setInterval(function () { $('hint').textContent = '0:0' + Math.min(9, Math.floor((Date.now() - t0) / 1000)) + ' · let go to save'; }, 200);
       return;
     }
@@ -356,7 +394,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   }
   function up() {
     if (!pressed) return;
-    pressed = false; sh.classList.remove('down'); clearTimeout(holdT); clearInterval(typeT);
+    pressed = false; sh.classList.remove('down'); clearTimeout(holdT); clearInterval(typeT); stopMeter();
     var withWords = talking, s = shot;
     talking = false; sh.classList.remove('talk'); sh.querySelector('i').innerHTML = '';
     $('dim').style.opacity = 0; $('talk').classList.remove('on'); $('cards').style.opacity = 1; $('hint').textContent = HINT;
