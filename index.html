@@ -126,11 +126,13 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
 .card.small { padding: 6px 8px; }
 .card.small .ph { width: 36px; height: 36px; border-radius: 8px; }
 .card.small .start, .card.small .addnote, .card.small .ln { display: none; }
-.sheet { position: absolute; inset: 0; z-index: 6; display: flex; flex-direction: column; justify-content: flex-end; background: rgba(0,0,0,.35); }
-.sheet .box { margin: 0 12px 12px; border-radius: 18px; padding: 10px; }
-.sheet form { display: flex; gap: 8px; margin-top: 8px; }
-.sheet input { flex: 1; min-width: 0; border: 0; border-radius: 12px; padding: 12px; font: 16px var(--app-font); color: var(--ink); background: #fff; }
-.sheet .send { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--teal); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; flex: none; }
+/* typing a note: the card drops to just above the keyboard and the row becomes the box */
+.cards.editing { bottom: var(--kb, 12px); z-index: 6; }
+.cards.editing .card:not(.edit) { display: none; }
+.cam.typing .cbottom, .cam.typing .camnote { visibility: hidden; }
+.card .noteform { display: flex; gap: 8px; margin-top: 8px; }
+.card .noteform input { flex: 1; min-width: 0; border: 0; border-radius: 12px; padding: 10px 12px; font: 16px var(--app-font); color: var(--ink); background: #fff; }
+.card .noteform .send { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--teal); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; flex: none; }
 /* ---- work list (JobList + JobCard) ---- */
 .wbody { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
 .wlhead { display: flex; justify-content: flex-end; align-items: center; gap: 12px; }
@@ -241,12 +243,6 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
       <div class="cbottom">
         <button type="button" class="shutter" id="shutter" aria-label="Tap: photo · Hold: photo + voice note"><i></i></button>
         <div class="hint" id="hint">Tap: photo · Hold: photo + voice note</div>
-      </div>
-      <div class="sheet" id="sheet" hidden>
-        <div class="box glass">
-          <div class="top" style="display:flex;gap:12px;align-items:center"><span class="ph" id="sheetPh" style="width:48px;height:48px;border-radius:10px;overflow:hidden;flex:none"></span><div style="min-width:0"><div style="font-weight:600" id="sheetNm"></div><div style="font-size:12px;opacity:.82" id="sheetLn"></div></div></div>
-          <form id="noteForm"><input id="noteIn" autocomplete="off" placeholder="What's going on?" aria-label="Note"><button class="send" type="submit" aria-label="Send"><span class="mi">arrow_upward</span></button></form>
-        </div>
       </div>
     </section>
   </div>
@@ -621,24 +617,38 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   }
   $('fullStart').addEventListener('click', function () { if (fullItem) startJob(fullItem); });
 
-  /* ---------- typing ---------- */
-  var noteFor = null;
+  /* ---------- typing: in the card itself ---------- */
+  var editing = null;
   function openNote(item) {
-    noteFor = item;
-    $('sheetPh').innerHTML = pic(item.scene);
-    $('sheetNm').textContent = item.name || ''; $('sheetLn').textContent = item.where ? line(item) : '';
-    $('noteIn').value = item.words || '';
-    $('sheet').hidden = false; setTimeout(function () { $('noteIn').focus(); }, 30);
+    if (editing) closeNote();
+    editing = item; var el = item.el;
+    var a = el.querySelector('.addnote'); if (a) a.remove();
+    var f = document.createElement('form'); f.className = 'noteform';
+    f.innerHTML = '<input autocomplete="off" placeholder="What\'s going on?" aria-label="Note"><button class="send" type="submit" aria-label="Send"><span class="mi">arrow_upward</span></button>';
+    var inp = f.querySelector('input'); inp.value = item.words || '';
+    f.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var v = inp.value.trim(); closeNote();
+      if (!v) return;
+      item.words = v;
+      var nm = item.el.querySelector('.nm'); nm.textContent = ''; nm.classList.add('think');
+      setTimeout(function () { think(item); render(item); }, 550);
+    });
+    el.appendChild(f); el.classList.add('edit'); el.classList.remove('small'); el.hidden = false;
+    $('cards').classList.add('editing'); $('cam').classList.add('typing'); $('dim').style.opacity = 1; kb();
+    inp.focus();
   }
-  $('sheet').addEventListener('click', function (e) { if (e.target === $('sheet')) $('sheet').hidden = true; });
-  $('noteForm').addEventListener('submit', function (e) {
-    e.preventDefault();
-    var v = $('noteIn').value.trim(); $('sheet').hidden = true;
-    if (!noteFor || !v) return;
-    var it = noteFor; it.words = v;
-    var nm = it.el.querySelector('.nm'); nm.textContent = ''; nm.classList.add('think');
-    setTimeout(function () { think(it); render(it); }, 550);
-  });
+  function closeNote() {
+    if (!editing) return;
+    var el = editing.el, f = el.querySelector('.noteform'); if (f) f.remove();
+    el.classList.remove('edit'); $('cards').classList.remove('editing'); $('cam').classList.remove('typing'); $('dim').style.opacity = 0;
+    var it = editing; editing = null; restack(); if (it.name) render(it);
+  }
+  /* tap anywhere else: put it away */
+  $('cam').addEventListener('pointerdown', function (e) { if (editing && !e.target.closest('.card.edit')) closeNote(); }, true);
+  /* keep the card right above the keyboard (iPhone leaves the page tall and slides the keyboard over it) */
+  function kb() { var v = window.visualViewport, gap = v ? Math.max(0, window.innerHeight - v.height - v.offsetTop) : 0; $('cards').style.setProperty('--kb', (gap + 12) + 'px'); }
+  if (window.visualViewport) { visualViewport.addEventListener('resize', kb); visualViewport.addEventListener('scroll', kb); }
 
   /* ---------- stage controls (desktop) ---------- */
   [].slice.call(document.querySelectorAll('#widths button')).forEach(function (b) {
