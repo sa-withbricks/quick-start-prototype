@@ -101,7 +101,6 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
 .shutter.talk i { background: var(--red); width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; }
 .shutter:focus-visible { outline: 3px solid var(--terra); outline-offset: 4px; }
 .hint { margin-top: 14px; font-size: 14px; font-weight: 600; opacity: .92; min-height: 20px; font-variant-numeric: tabular-nums; }
-.kbd { position: absolute; right: 28px; bottom: calc(66px + env(safe-area-inset-bottom, 0px)); width: 48px; height: 48px; z-index: 4; }
 .thumbfly { position: absolute; left: 20px; bottom: calc(44px + env(safe-area-inset-bottom, 0px)); width: 56px; height: 56px; border-radius: 12px; border: 2px solid #fff; overflow: hidden; z-index: 4; opacity: 0; transform: scale(.6); transition: all .2s; }
 .thumbfly.on { opacity: 1; transform: scale(1); }
 .talk { position: absolute; left: 16px; right: 16px; bottom: 190px; border-radius: 18px; padding: 14px 16px; z-index: 3; opacity: 0; transform: translateY(8px); transition: all .15s; pointer-events: none; }
@@ -192,9 +191,9 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
         <div class="row" style="justify-content:flex-end;color:#718096;font-weight:600;gap:4px"><span class="mi mo">sticky_note_2</span>View all <span id="jNotes">0</span> notes</div>
         <div class="notesbox"><div class="h"><b>Add Service Notes</b><span>Tap to type or use voice</span></div><div class="b">Add a quick note about the work you did.</div></div>
       </div>
-      <div class="toast" id="toast" hidden><span class="mi ok">check_circle</span><div style="min-width:0"><b id="toastH"></b><span id="toastT"></span></div><button type="button" class="x" id="toastView" style="background:none;border:0;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap" hidden>View list</button></div>
+      <div class="toast" id="toast" hidden><span class="mi ok">check_circle</span><div style="min-width:0"><b id="toastH"></b><span id="toastT"></span></div></div>
       <nav class="abar">
-        <button type="button" class="abtn"><span class="mi">checklist</span>Tasks</button>
+        <button type="button" class="abtn go" id="openList"><span class="mi">checklist</span>Tasks</button>
         <button type="button" class="abtn go" id="openCam"><span class="mi">add_a_photo</span>Snap</button>
         <button type="button" class="abtn"><span class="mi">check</span>Complete Job</button>
         <button type="button" class="abtn"><span class="mi">logout</span>Check Out</button>
@@ -239,7 +238,6 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
       <div class="talk glass" id="talk"><p id="words"></p><div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
       <div class="cards" id="cards"></div>
       <div class="thumbfly" id="thumb"></div>
-      <button type="button" class="cbtn glass kbd" id="kbd" aria-label="Type instead"><span class="mi" style="font-size:24px">keyboard</span></button>
       <div class="cbottom">
         <button type="button" class="shutter" id="shutter" aria-label="Tap: photo · Hold: photo + voice note"><i></i></button>
         <div class="hint" id="hint">Tap: photo · Hold: photo + voice note</div>
@@ -323,13 +321,12 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
     $('jEq').style.fontWeight = job.eq ? '600' : '400';
     tick();
     clearTimeout(toastTimer);
-    $('toastView').hidden = !(toast && log.length);
     if (toast) { $('toastH').textContent = toast[0]; $('toastT').textContent = toast[1]; $('toast').hidden = false; toastTimer = setTimeout(function () { $('toast').hidden = true; }, 6000); }
     else $('toast').hidden = true;
   }
   function openCam(from) { camFrom = from; $('cards').innerHTML = ''; items = []; $('job').hidden = true; $('list').hidden = true; $('cam').hidden = false; $('vf').innerHTML = ''; startCamera(); findMe(); }
   $('listCreate').addEventListener('click', function () { openCam('list'); });
-  $('toastView').addEventListener('click', function () { showList(); });
+  $('openList').addEventListener('click', function () { showList(); });
   $('backToJob').addEventListener('click', function () { showJob(null); });
   $('fullBack').addEventListener('click', function () { showList(); });
   $('openCam').addEventListener('click', function () { openCam('job'); });
@@ -633,13 +630,6 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
     $('noteIn').value = item.words || '';
     $('sheet').hidden = false; setTimeout(function () { $('noteIn').focus(); }, 30);
   }
-  $('kbd').addEventListener('click', function () {
-    if (Date.now() - lastEnd < 700) return;
-    var sc = snap(); $('flash').classList.remove('go'); void $('flash').offsetWidth; $('flash').classList.add('go');
-    lastEnd = Date.now(); addItem(sc, '');
-    if (typeof sc === 'string') { sceneIx++; setScene(); }
-    openNote(items[items.length - 1]);
-  });
   $('sheet').addEventListener('click', function (e) { if (e.target === $('sheet')) $('sheet').hidden = true; });
   $('noteForm').addEventListener('submit', function (e) {
     e.preventDefault();
