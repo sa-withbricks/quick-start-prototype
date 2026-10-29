@@ -183,8 +183,8 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
       <div class="thumbfly" id="thumb"></div>
       <button type="button" class="cbtn glass kbd" id="kbd" aria-label="Type instead"><span class="mi" style="font-size:24px">keyboard</span></button>
       <div class="cbottom">
-        <button type="button" class="shutter" id="shutter" aria-label="Snap and hold to talk"><i></i></button>
-        <div class="hint" id="hint">Snap and hold to talk</div>
+        <button type="button" class="shutter" id="shutter" aria-label="Tap for photo · hold to talk"><i></i></button>
+        <div class="hint" id="hint">Tap for photo · hold to talk</div>
       </div>
       <div class="sheet" id="sheet" hidden>
         <div class="box glass">
@@ -214,12 +214,16 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   /* a plain snap: named from the photo alone */
   var SEEN = {
     unit: { name: 'Wall AC unit', where: 'Office 8', eq: 'Carrier 45MAHAQ12XA3' },
-    leak: { name: 'Water under the sink', where: 'Mansion', eq: '' },
-    hall: { name: 'Ceiling light', where: 'Mansion', eq: '' }
+    leak: { name: 'Water under the sink', where: '', eq: '' },
+    hall: { name: 'Ceiling light', where: '', eq: '' }
   };
   var PLACES = ['Office 10', 'Office 11', 'Office 12', 'Office 13', 'Office 14', 'Office 15', 'Office 16', 'Office 17', 'Office 1', 'Office 2', 'Office 3', 'Office 4', 'Office 5', 'Office 6', 'Office 7', 'Office 8', 'Office 9',
     'Staff Lounge', 'Upper Chapel', 'Kitchen', 'Library', 'Dining Room', 'Great Hall', 'Board Room', 'Breakfast Room', 'Chapel', 'Elevator', 'Porch', 'IT Office', 'HR Office',
     "Men's Bathroom", "Women's Bathroom", 'Staff Bathroom', 'Grounds', 'East Gate', 'Scripps Gate', 'Fleet Parking', 'MSO Building', 'Lobby', 'Laundry'];
+  /* buildings, metres north/east of where the camera is first opened: Guest House has no building coordinates
+     on file, so the prototype lays the campus out around you to try walking between them */
+  var BUILDINGS = [['Mansion', 0, 0], ['Villa', 120, 0], ['MSO Building', 0, 120], ['Treatment Center', -120, 0], ['Fleet Parking', 0, -120]];
+  var HINT = 'Tap for photo · hold to talk';
   var UNITS = { 'Office 8': 'Carrier 45MAHAQ12XA3', 'Office 9': 'Carrier 45MAHAQ12XA3' };
 
   /* ---------- state ---------- */
@@ -227,6 +231,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   var job, sceneIx, items, srNext, timerStart, lastEnd = 0;
   /* real camera + voice on a page allowed to use them; otherwise the scenes act it out */
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var here = 'Mansion', origin = null, geoWatch = null;
   var real = false, stream = null, video = null, rec = null, heard = '';
   function reset() {
     job = { name: 'Boiler inspection', where: 'Mansion', eq: '', sr: 'SR570308', since: Date.now() - (24 * 60 + 10) * 1000 };
@@ -251,7 +256,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
     if (toast) { $('toastH').textContent = toast[0]; $('toastT').textContent = toast[1]; $('toast').hidden = false; toastTimer = setTimeout(function () { $('toast').hidden = true; }, 4000); }
     else $('toast').hidden = true;
   }
-  $('openCam').addEventListener('click', function () { $('cards').innerHTML = ''; items = []; $('job').hidden = true; $('cam').hidden = false; setScene(); startCamera(); });
+  $('openCam').addEventListener('click', function () { $('cards').innerHTML = ''; items = []; $('job').hidden = true; $('cam').hidden = false; $('vf').innerHTML = ''; startCamera(); findMe(); });
   $('closeCam').addEventListener('click', function () {
     var n = items.length;
     stopCamera();
@@ -264,7 +269,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
     note('');
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       note(window.isSecureContext ? 'This browser can\'t use the camera here. Open the link in Chrome or Safari.' : 'Camera needs the https link.');
-      return;
+      setScene(); return;
     }
     /* camera and mic asked together, so nothing pops up mid-hold */
     var md = navigator.mediaDevices, v = { facingMode: { ideal: 'environment' } };
@@ -282,15 +287,27 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
       $('vf').innerHTML = ''; $('vf').style.animation = 'none'; $('vf').style.inset = '0'; $('vf').appendChild(video);
       var p = video.play(); if (p && p.catch) p.catch(function () {});
     }).catch(function (e) {
-      real = false;
+      real = false; if (!$('cam').hidden) setScene();
       note(e && e.name === 'NotAllowedError' ? 'Camera blocked: allow it in site settings, then reopen. Showing pretend scenes.' : 'No camera found. Showing pretend scenes.');
     });
   }
   function stopCamera() {
     if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
-    stream = null; video = null; real = false; note('');
+    stream = null; video = null; real = false; note(''); stopFinding();
     $('vf').style.animation = ''; $('vf').style.inset = '';
   }
+  function findMe() {
+    if (!navigator.geolocation || geoWatch !== null) return;
+    geoWatch = navigator.geolocation.watchPosition(function (p) {
+      var c = p.coords;
+      if (!origin) origin = { lat: c.latitude, lon: c.longitude };
+      var n = (c.latitude - origin.lat) * 111320, e = (c.longitude - origin.lon) * 111320 * Math.cos(origin.lat * Math.PI / 180);
+      var best = null, bd = Infinity;
+      BUILDINGS.forEach(function (b) { var d = Math.hypot(n - b[1], e - b[2]); if (d < bd) { bd = d; best = b[0]; } });
+      here = best; $('gps').textContent = here;
+    }, function () {}, { enableHighAccuracy: true, maximumAge: 5000 });
+  }
+  function stopFinding() { if (geoWatch !== null && navigator.geolocation) navigator.geolocation.clearWatch(geoWatch); geoWatch = null; }
   function scene() { return ORDER[sceneIx % ORDER.length]; }
   function setScene() { if (!real) $('vf').innerHTML = SCENES[scene()]; }
   function snap() {
@@ -342,7 +359,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
     pressed = false; sh.classList.remove('down'); clearTimeout(holdT); clearInterval(typeT);
     var withWords = talking, s = shot;
     talking = false; sh.classList.remove('talk'); sh.querySelector('i').innerHTML = '';
-    $('dim').style.opacity = 0; $('talk').classList.remove('on'); $('cards').style.opacity = 1; $('hint').textContent = 'Snap and hold to talk';
+    $('dim').style.opacity = 0; $('talk').classList.remove('on'); $('cards').style.opacity = 1; $('hint').textContent = HINT;
     setTimeout(function () { $('thumb').classList.remove('on'); }, 250);
     lastEnd = Date.now();
     if (typeof s === 'string') { addItem(s, withWords ? SAID[s].words : ''); sceneIx++; setScene(); return; }
@@ -376,11 +393,11 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   }
   function think(item) {
     var isScene = typeof item.scene === 'string';
-    var seen = isScene ? SEEN[item.scene] : { name: 'Photo, no note yet', where: 'Mansion', eq: '' };
-    if (!item.words) { item.name = seen.name; item.where = seen.where; item.eq = seen.eq; return; }
+    var seen = isScene ? SEEN[item.scene] : { name: 'Photo, no note yet', where: '', eq: '' };
+    if (!item.words) { item.name = seen.name; item.where = seen.where || here; item.eq = seen.eq; return; }
     var known = isScene && SAID[item.scene];
     if (known && item.words === known.words) { item.name = known.name; item.where = known.where; item.eq = known.eq; return; }
-    var p = placeIn(item.words) || seen.where;
+    var p = placeIn(item.words) || seen.where || here;
     item.where = p; item.eq = UNITS[p] || seen.eq; item.name = nameFrom(item.words, p);
   }
 
@@ -470,7 +487,6 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   });
   $('restart').addEventListener('click', reset);
   reset();
-  $('openCam').click(); /* opens on the camera, the job behind it */
 })();
 </script>
 </body></html>
