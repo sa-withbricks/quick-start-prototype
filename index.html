@@ -132,6 +132,31 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
 .sheet form { display: flex; gap: 8px; margin-top: 8px; }
 .sheet input { flex: 1; min-width: 0; border: 0; border-radius: 12px; padding: 12px; font: 16px var(--app-font); color: var(--ink); background: #fff; }
 .sheet .send { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--teal); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; flex: none; }
+/* ---- what got saved (tap a card) ---- */
+.detail .box { max-height: 82%; overflow: auto; }
+.detail .big { height: 150px; border-radius: 12px; overflow: hidden; }
+.detail .big svg, .detail .big img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.detail h2 { font-size: 18px; margin: 12px 4px 4px; }
+.detail dl { margin: 8px 4px 4px; display: grid; grid-template-columns: 74px 1fr; gap: 8px 10px; font-size: 14px; }
+.detail dt { opacity: .7; }
+.detail dd { margin: 0; overflow-wrap: anywhere; }
+.detail dd small { display: block; opacity: .65; font-size: 12px; }
+.detail .chk { margin: 10px 4px 2px; font-size: 13px; color: #ffd59a; display: flex; gap: 6px; align-items: flex-start; }
+/* ---- manager inbox ---- */
+.mgr { background: var(--page); }
+.mgr .mbody { flex: 1; overflow: auto; padding: 12px 12px 24px; }
+.mgr h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); margin: 14px 4px 8px; }
+.mrow { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; gap: 10px; margin-bottom: 8px; }
+.mrow .ph { width: 56px; height: 56px; border-radius: 10px; overflow: hidden; flex: none; background: #ddd; }
+.mrow .ph svg, .mrow .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mrow .tx { min-width: 0; flex: 1; }
+.mrow .nm { font-weight: 600; }
+.mrow .ln { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+.mrow .why { font-size: 13px; color: #9a5b00; margin-top: 6px; }
+.mrow .acts { display: flex; gap: 8px; margin-top: 8px; }
+.mrow .acts button, .mrow .acts select { font: 600 13px var(--app-font); border-radius: 8px; padding: 7px 10px; border: 1px solid #cbd5e0; background: #fff; color: var(--ink); min-width: 0; }
+.mrow .acts .yes { background: var(--teal); border-color: var(--teal); color: #fff; }
+.mempty { color: var(--ink-3); text-align: center; padding: 40px 16px; line-height: 1.5; }
 </style>
 
 <div class="stage">
@@ -141,6 +166,8 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
     <p>Just tap for a photo with no words, then add a note on the card. Swipe a card away to undo. Start makes it your job.</p>
     <p class="k">Phone width</p>
     <div class="seg" id="widths"><button type="button" data-w="360" class="on">Android · 360</button><button type="button" data-w="411">411</button><button type="button" data-w="428">iPhone · 428</button></div>
+    <p class="k">Who's looking</p>
+    <div class="seg" id="who"><button type="button" data-h="" class="on">Tech</button><button type="button" data-h="#manager">Manager</button></div>
     <button type="button" class="restart" id="restart">Start over</button>
     <p class="k">Prototype. On a phone it uses your camera and voice when the page is allowed to; otherwise the camera and voice are acted out. The AI is acted out. Places and the unit come from one customer.s real records.</p>
   </div>
@@ -148,7 +175,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   <div class="phone" id="phone">
     <!-- JOB PAGE -->
     <section class="screen" id="job">
-      <div class="nav"><div class="l"><span class="mi">menu</span><span class="mi">handyman</span></div><div class="logo"><i></i>Bricks</div><div class="r"><span class="mi mo">notifications</span><span class="mi">search</span><span class="avatar"></span></div></div>
+      <div class="nav"><div class="l"><a href="#manager" class="mi" style="color:inherit;text-decoration:none" aria-label="Manager view">menu</a><span class="mi">handyman</span></div><div class="logo"><i></i>Bricks</div><div class="r"><span class="mi mo">notifications</span><span class="mi">search</span><span class="avatar"></span></div></div>
       <div class="checkbar"><span>●</span><b>Checked in</b><span>•</span><span class="t" id="jTitle"></span><span class="tm" id="jTimer"></span><span class="mi" style="font-size:18px">chevron_right</span></div>
       <div class="jbody">
         <div class="row"><span class="chip-in"><span class="mi mo" style="font-size:14px">task_alt</span>Checked in • <span id="jTimer2"></span></span><span class="sr" id="jSr"></span></div>
@@ -193,6 +220,15 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
           <form id="noteForm"><input id="noteIn" autocomplete="off" placeholder="What's going on?" aria-label="Note"><button class="send" type="submit" aria-label="Send"><span class="mi">arrow_upward</span></button></form>
         </div>
       </div>
+      <div class="sheet detail" id="detail" hidden>
+        <div class="box glass" id="detailBox"></div>
+      </div>
+    </section>
+
+    <!-- MANAGER: what the techs logged today; only the unsure ones need a look -->
+    <section class="screen mgr" id="mgr" hidden>
+      <div class="nav"><div class="l"><a href="#" class="mi" style="color:inherit;text-decoration:none" aria-label="Tech view">menu</a><span style="font-weight:600">Logged today</span></div><div class="logo"><i></i>Bricks</div><div class="r"><span class="mi mo">notifications</span><span class="avatar" style="background:#5a7fa8"></span></div></div>
+      <div class="mbody" id="mbody"></div>
     </section>
   </div>
 </div>
@@ -214,7 +250,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   };
   /* a plain snap: named from the photo alone */
   var SEEN = {
-    unit: { name: 'Wall AC unit', where: 'Office 8', eq: 'Carrier 45MAHAQ12XA3' },
+    unit: { name: 'Wall AC unit', where: 'Office 8', eq: 'Carrier 45MAHAQ12XA3', serial: '4417K10582' },
     leak: { name: 'Water under the sink', where: '', eq: '' },
     hall: { name: 'Ceiling light', where: '', eq: '' }
   };
@@ -234,10 +270,11 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   var here = 'Mansion', origin = null, geoWatch = null;
   var real = false, stream = null, video = null, rec = null, heard = '';
+  var log = [], ME = 'Carl';
   var mic = null, actx = null, meterSrc = null, meterRaf = 0, level = 0;
   function reset() {
     job = { name: 'Boiler inspection', where: 'Mansion', eq: '', sr: 'SR570308', since: Date.now() - (24 * 60 + 10) * 1000 };
-    sceneIx = 0; items = []; srNext = 572614;
+    sceneIx = 0; items = []; log = []; srNext = 572614;
     $('cards').innerHTML = '';
     stopCamera();
     showJob(null);
@@ -347,7 +384,9 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
     var c = document.createElement('canvas'), w = video.videoWidth, h = video.videoHeight, k = Math.min(1, 900 / Math.max(w, h));
     c.width = Math.round(w * k); c.height = Math.round(h * k);
     c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
-    return { img: c.toDataURL('image/jpeg', .8) };
+    var t = document.createElement('canvas'), q = 160 / Math.max(c.width, c.height);
+    t.width = Math.round(c.width * q); t.height = Math.round(c.height * q); t.getContext('2d').drawImage(c, 0, 0, t.width, t.height);
+    return { img: c.toDataURL('image/jpeg', .8), thumb: t.toDataURL('image/jpeg', .7) };
   }
   function pic(s) { return typeof s === 'string' ? SCENES[s] : '<img alt="" src="' + s.img + '" style="width:100%;height:100%;object-fit:cover;display:block">'; }
   var pressed = false, talking = false, holdT, typeT, shot, t0;
@@ -431,20 +470,29 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
   }
   function think(item) {
     var isScene = typeof item.scene === 'string';
-    var seen = isScene ? SEEN[item.scene] : { name: 'Photo, no note yet', where: '', eq: '' };
-    if (!item.words) { item.name = seen.name; item.where = seen.where || here; item.eq = seen.eq; return; }
-    var known = isScene && SAID[item.scene];
-    if (known && item.words === known.words) { item.name = known.name; item.where = known.where; item.eq = known.eq; return; }
-    var p = placeIn(item.words) || seen.where || here;
-    item.where = p; item.eq = UNITS[p] || seen.eq; item.name = nameFrom(item.words, p);
+    var seen = isScene ? SEEN[item.scene] : { name: item.plate ? (item.plate.brand || 'Equipment') + ' unit' : 'Photo, no note yet', where: '', eq: '' };
+    var plate = item.plate || (seen.eq ? { eq: seen.eq, serial: seen.serial, onFile: true } : null);
+    var known = isScene && item.words && SAID[item.scene] && item.words === SAID[item.scene].words ? SAID[item.scene] : null;
+    var said = known ? known.where : item.words ? placeIn(item.words) : '';
+    item.where = said || seen.where || here;
+    item.whereFrom = said ? 'what you said' : seen.where ? 'the photo' : 'your location';
+    item.eq = ''; item.eqFrom = ''; item.serial = '';
+    if (plate) { item.eq = plate.eq; item.serial = plate.serial || ''; item.eqFrom = 'the nameplate'; }
+    else if (UNITS[item.where]) { item.eq = UNITS[item.where]; item.eqFrom = 'on file for ' + item.where; }
+    item.name = known ? known.name : item.words ? nameFrom(item.words, item.where) : seen.name;
+    item.unsure = plate && !plate.onFile ? 'New unit, not on file. Add it to ' + item.where + '?'
+      : item.whereFrom === 'your location' ? "Place is a guess from the phone's location." : '';
+    item.ok = false;
+    save();
   }
 
   /* ---------- cards ---------- */
   function line(i) { return i.where + (i.eq ? ' · ' + i.eq : ''); }
   function restack() { var all = [].slice.call($('cards').children); all.forEach(function (c, ix) { c.classList.toggle('small', ix < all.length - 1); c.hidden = ix < all.length - 3; }); }
   function addItem(sc, words) {
-    var item = { scene: sc, words: words, sr: 'SR' + (srNext++) };
-    items.push(item);
+    var item = { scene: sc, words: words, sr: 'SR' + (srNext++), at: Date.now(), from: job.name, by: ME };
+    items.push(item); log.push(item);
+    if (typeof sc !== 'string') readPlate(item);
     var el = document.createElement('div');
     el.className = 'card glass'; item.el = el;
     el.innerHTML = '<div class="top"><span class="ph">' + pic(sc) + '</span><div class="tx"><div class="nm think"></div><div class="ln">&nbsp;</div></div>' +
@@ -453,7 +501,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
     restack();
     setTimeout(function () { think(item); render(item); }, 550);
     el.querySelector('.start').addEventListener('click', function () { startJob(item); });
-    el.querySelector('.tx').addEventListener('click', function () { openNote(item); });
+    el.querySelector('.tx').addEventListener('click', function () { if (item.name) openDetail(item); });
     swipe(el, item);
   }
   function render(item) {
@@ -477,7 +525,7 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
       if (x0 === null) return; x0 = null; el.style.transition = '';
       if (Math.abs(dx) > 90) {
         el.style.transform = 'translateX(' + (dx > 0 ? 400 : -400) + 'px)'; el.style.opacity = 0;
-        items = items.filter(function (i) { return i !== item; });
+        items = items.filter(function (i) { return i !== item; }); log = log.filter(function (i) { return i !== item; }); save();
         setTimeout(function () { el.remove(); restack(); }, 200);
       } else { el.style.transform = ''; el.style.opacity = ''; }
     }
@@ -489,6 +537,90 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
     stopCamera();
     showJob(['Checked out of ' + was, "It's on your list to finish"]);
   }
+
+  /* ---------- nameplate: read the text on the phone, look for a brand, model and serial ---------- */
+  var BRANDS = ['Carrier', 'Trane', 'Lennox', 'York', 'Goodman', 'Rheem', 'Ruud', 'Daikin', 'Mitsubishi', 'Bryant', 'Payne', 'Amana', 'Heil', 'Fujitsu', 'LG', 'Bosch', 'Navien', 'Rinnai', 'Bradford White', 'AO Smith', 'Lochinvar', 'Weil-McLain', 'Burnham', 'Hussmann', 'Hoshizaki', 'Manitowoc', 'Scotsman', 'Traulsen', 'Liebert', 'Marley', 'Aaon', 'Reznor', 'Modine', 'Greenheck', 'Kohler', 'Generac', 'Cummins', 'Whirlpool', 'Frigidaire', 'Hobart'];
+  var ocr = null;
+  function readPlate(item) {
+    item.reading = true;
+    (ocr || (ocr = new Promise(function (ok, no) {
+      var sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      sc.onload = function () { window.Tesseract.createWorker('eng').then(ok, no); }; sc.onerror = no; document.head.appendChild(sc);
+    }))).then(function (w) { return w.recognize(item.scene.img); }).then(function (r) {
+      var up = r.data.text.toUpperCase(), brand = '';
+      BRANDS.some(function (b) { if (new RegExp('\\b' + b.toUpperCase() + '\\b').test(up)) { brand = b; return true; } return false; });
+      var m = up.match(/(?:MODEL|MOD\.?|M\/N)\s*(?:NO\.?|NUMBER|#)?\s*[:.#-]?\s*([A-Z0-9][A-Z0-9-]{4,})/);
+      var sn = up.match(/(?:SERIAL|SER\.?|S\/N)\s*(?:NO\.?|NUMBER|#)?\s*[:.#-]?\s*([A-Z0-9][A-Z0-9-]{4,})/);
+      item.reading = false;
+      if (!m && !sn) return;
+      var model = m ? m[1] : '';
+      var onFile = !!model && Object.keys(UNITS).some(function (k) { return UNITS[k].indexOf(model) >= 0; });
+      item.plate = { brand: brand, eq: ((brand ? brand + ' ' : '') + model).trim() || 'Unit', serial: sn ? sn[1] : '', onFile: onFile };
+      if (item.name) { think(item); render(item); }
+    }).catch(function () { item.reading = false; });
+  }
+
+  /* ---------- what got saved ---------- */
+  function clock(t) { return new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function openDetail(item) {
+    var h = '<div class="big">' + pic(item.scene) + '</div><h2>' + esc(item.name) + '</h2><dl>' +
+      '<dt>Notes</dt><dd>' + (item.words ? '\u201c' + esc(item.words) + '\u201d<small>word for word</small>' : 'None yet') + '</dd>' +
+      '<dt>Place</dt><dd>' + esc(item.where) + '<small>from ' + item.whereFrom + '</small></dd>' +
+      '<dt>Unit</dt><dd>' + (item.eq ? esc(item.eq) + (item.serial ? ' \u00b7 SN ' + esc(item.serial) : '') + '<small>' + (item.eqFrom.indexOf('on file') === 0 ? item.eqFrom : 'read from ' + item.eqFrom) + '</small>' : (item.reading ? 'Reading the photo\u2026' : 'None')) + '</dd>' +
+      '<dt>Logged</dt><dd>' + esc(item.by) + ' \u00b7 ' + clock(item.at) + '<small>while on ' + esc(item.from) + '</small></dd>' +
+      '<dt>Status</dt><dd>To do \u00b7 yours</dd></dl>' +
+      (item.unsure && !item.ok ? '<div class="chk"><span class="mi" style="font-size:16px">flag</span>Your manager will check: ' + esc(item.unsure) + '</div>' : '') +
+      (item.words ? '' : '<button type="button" class="addnote" id="detailNote"><span class="mi" style="font-size:18px">edit</span><span style="opacity:.85">Add a note</span></button>');
+    $('detailBox').innerHTML = h; $('detail').hidden = false;
+    var b = $('detailNote'); if (b) b.addEventListener('click', function () { $('detail').hidden = true; openNote(item); });
+  }
+  $('detail').addEventListener('click', function (e) { if (e.target === $('detail')) $('detail').hidden = true; });
+
+  /* ---------- the day's log, shared with the manager view on this phone ---------- */
+  var KEY = 'qs-proto-log', past = load();
+  function save() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(past.concat(log.filter(function (i) { return i.name; }).map(function (i) {
+        return { name: i.name, words: i.words, where: i.where, whereFrom: i.whereFrom, eq: i.eq, eqFrom: i.eqFrom, serial: i.serial,
+          unsure: i.unsure, ok: i.ok, at: i.at, by: i.by, from: i.from, sr: i.sr, scene: typeof i.scene === 'string' ? i.scene : { img: i.scene.thumb } };
+      }))));
+    } catch (x) {}
+  }
+  /* the manager's answers are kept apart, by when it was logged, so the tech side never writes over them */
+  function answers() { try { return JSON.parse(localStorage.getItem(KEY + '-ok')) || {}; } catch (x) { return {}; } }
+  function load() {
+    var a = answers();
+    try { return (JSON.parse(localStorage.getItem(KEY)) || []).map(function (i) { var o = a[i.at]; if (o) { i.ok = true; if (o.where) i.where = o.where; } return i; }); } catch (x) { return []; }
+  }
+  function mgrRow(i, ix) {
+    var r = '<div class="mrow"><span class="ph">' + pic(i.scene) + '</span><div class="tx"><div class="nm">' + esc(i.name) + '</div>' +
+      '<div class="ln">' + esc(i.where + (i.eq ? ' \u00b7 ' + i.eq : '')) + ' \u00b7 ' + esc(i.by) + ', ' + clock(i.at) + '</div>';
+    if (i.unsure && !i.ok) {
+      r += '<div class="why">' + esc(i.unsure) + '</div><div class="acts"><button type="button" class="yes" data-ok="' + ix + '">Looks right</button>' +
+        '<select data-fix="' + ix + '" aria-label="Change place"><option value="">Change place\u2026</option>' +
+        BUILDINGS.map(function (b) { return b[0]; }).concat(PLACES).filter(function (p, k, all) { return all.indexOf(p) === k; }).map(function (p) { return '<option>' + esc(p) + '</option>'; }).join('') + '</select></div>';
+    }
+    return r + '</div></div>';
+  }
+  function showMgr() {
+    var all = load(), check = [], done = [];
+    all.forEach(function (i, ix) { (i.unsure && !i.ok ? check : done).push(mgrRow(i, ix)); });
+    $('mbody').innerHTML = !all.length ? '<div class="mempty">Nothing logged yet today.<br>Snap something on the tech side and it shows up here.</div>' :
+      (check.length ? '<h3>Check these \u00b7 ' + check.length + '</h3>' + check.join('') : '<h3>Nothing to check</h3>') +
+      (done.length ? '<h3>Logged today \u00b7 ' + done.length + '</h3>' + done.join('') : '');
+    function store(ix, where) { var a = answers(); a[all[ix].at] = { where: where }; localStorage.setItem(KEY + '-ok', JSON.stringify(a)); showMgr(); }
+    [].forEach.call($('mbody').querySelectorAll('[data-ok]'), function (b) { b.addEventListener('click', function () { store(+b.dataset.ok, ''); }); });
+    [].forEach.call($('mbody').querySelectorAll('[data-fix]'), function (sl) { sl.addEventListener('change', function () { if (sl.value) store(+sl.dataset.fix, sl.value); }); });
+  }
+  function route() {
+    var m = location.hash === '#manager';
+    [].forEach.call(document.querySelectorAll('#who button'), function (b) { b.classList.toggle('on', b.dataset.h === (m ? '#manager' : '')); });
+    if (m) { stopCamera(); $('job').hidden = true; $('cam').hidden = true; $('mgr').hidden = false; showMgr(); }
+    else if (!$('mgr').hidden) { $('mgr').hidden = true; showJob(null); }
+  }
+  window.addEventListener('hashchange', route);
+  [].forEach.call(document.querySelectorAll('#who button'), function (b) { b.addEventListener('click', function () { if (location.hash !== b.dataset.h) location.hash = b.dataset.h; route(); }); });
 
   /* ---------- typing ---------- */
   var noteFor = null;
@@ -523,8 +655,9 @@ body { background: var(--stage); color: var(--stage-ink); font-family: var(--app
       $('phone').style.setProperty('--pw', b.dataset.w + 'px');
     });
   });
-  $('restart').addEventListener('click', reset);
+  $('restart').addEventListener('click', function () { past = []; reset(); save(); try { localStorage.removeItem(KEY + '-ok'); } catch (x) {} route(); });
   reset();
+  route();
 })();
 </script>
 </body></html>
