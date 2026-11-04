@@ -1,0 +1,650 @@
+<!doctype html>
+<!-- v9: Quick Start v2.1 phone prototype. Real rear camera + Web Speech (as prototype.html), self-contained.
+     Tap = photo, then ~4 s listening; talk = keeps recording until stop or ~4 s silence (+1 s tail).
+     Card mic and editor Description mic re-engage. Hold = talk while held (+1 s tail). AI is faked (~2.5 s). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Quick Start</title>
+<style>
+html, body { margin: 0; height: 100%; background: #000; overscroll-behavior: none; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #fff; -webkit-tap-highlight-color: transparent; }
+* { box-sizing: border-box; }
+button { font-family: inherit; -webkit-user-select: none; user-select: none; }
+svg.i { width: 1em; height: 1em; fill: currentColor; display: inline-block; vertical-align: middle; flex: none; }
+#app { position: fixed; inset: 0; overflow: hidden; background: #000; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
+@media (min-width: 520px) { #app { left: 50%; right: auto; width: 430px; transform: translateX(-50%); } }
+.glass { background: rgba(0,0,0,.45); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); color: #fff; }
+.vf { position: absolute; inset: 0; overflow: hidden; background: #222; }
+.vf video, .vf svg { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dim { position: absolute; inset: 0; background: #000; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+.flash.go { animation: flash .35s ease-out forwards; }
+@keyframes flash { from { opacity: .9; } to { opacity: 0; } }
+.ctop { position: absolute; left: 0; right: 0; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; padding: calc(16px + env(safe-area-inset-top, 0px)) 16px 16px; }
+.cbtn { width: 38px; height: 38px; border-radius: 9999px; border: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; font-size: 20px; }
+.note { position: absolute; left: 16px; right: 16px; bottom: calc(300px + env(safe-area-inset-bottom, 0px)); z-index: 3; border-radius: 14px; padding: 10px 14px; font-size: 13px; line-height: 1.35; }
+/* talk panel (QuickCaptureScreen.tsx:315-334), plus a stop button */
+.talk { position: absolute; left: 16px; right: 16px; bottom: calc(190px + env(safe-area-inset-bottom, 0px)); z-index: 3; border-radius: 18px; padding: 14px 16px 12px; opacity: 0; transform: translateY(8px); transition: opacity .15s, transform .15s; pointer-events: none; }
+.talk.on { opacity: 1; transform: none; pointer-events: auto; }
+.talk p { margin: 0; min-height: 24px; max-height: 72px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; font-size: 18px; font-weight: 600; line-height: 1.35; }
+.talk p .int { opacity: .7; }
+.trow { margin-top: 10px; display: flex; align-items: center; gap: 12px; }
+.bars { flex: 1; height: 34px; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.bars i { display: block; width: 4px; border-radius: 2px; background: #fff; height: 6px; transition: height .5s ease-out; }
+.bars.up i { transition: height .07s linear; }
+.bars.idle i { animation: wv .9s ease-in-out infinite alternate; }
+.bars.idle i:nth-child(2n) { animation-delay: .2s; } .bars.idle i:nth-child(3n) { animation-delay: .4s; }
+@keyframes wv { from { height: 6px; } to { height: 14px; } }
+.stopb { flex: none; width: 44px; height: 44px; border-radius: 9999px; border: 0; background: #e53e3e; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; cursor: pointer; }
+.talk .sp { flex: none; width: 44px; }
+/* cards: fixed at the top under Close/Flash, so the shutter never meets them (v7 A) */
+.stack { position: absolute; left: 12px; right: 12px; top: calc(70px + env(safe-area-inset-top, 0px)); z-index: 3; display: flex; flex-direction: column; gap: 8px; }
+.card { border-radius: 18px; background: rgba(0,0,0,.45); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); padding: 8px; color: #fff; touch-action: pan-y; transition: transform .2s, opacity .3s; }
+.card.small { padding: 6px 8px; }
+.card.fading { opacity: 0; transform: translateY(-8px); }
+.card .row { display: flex; align-items: center; gap: 10px; }
+.ph { flex: none; width: 56px; height: 56px; border-radius: .4rem; overflow: hidden; background: #333; }
+.card.small .ph { width: 36px; height: 36px; border-radius: .2rem; }
+.ph img, .ph svg { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tx { min-width: 0; flex: 1; cursor: pointer; }
+.nm { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
+.nm.heard { font-weight: 500; font-style: italic; opacity: .85; }
+.nm.named { animation: named .7s ease-out; }
+@keyframes named { from { background: rgba(255,255,255,.35); } to { background: transparent; } }
+.think { display: inline-block; height: 14px; width: 58%; border-radius: .375rem; background: rgba(255,255,255,.3); vertical-align: -1px; }
+.think.pulse { animation: pulse 2s cubic-bezier(.4,0,.6,1) infinite; }
+@keyframes pulse { 50% { opacity: .5; } }
+.pl { margin-top: 2px; font-size: 12px; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.phd { display: inline-block; height: 9px; width: 64px; border-radius: .375rem; background: rgba(255,255,255,.3); vertical-align: 0; }
+.phd.u { width: 44px; }
+.said { margin-top: 4px; font-size: 12px; opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.start { flex: none; min-height: 44px; display: flex; align-items: center; gap: 2px; border: 0; border-radius: .4rem; background: #fff; color: #1a202c; padding: 8px 12px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.start .i { font-size: 18px; }
+.start:disabled { opacity: .6; }
+.micb { flex: none; width: 44px; height: 44px; border-radius: 9999px; border: 0; background: rgba(255,255,255,.2); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; cursor: pointer; padding: 0; }
+.micb.on { background: #e53e3e; animation: micpulse 1.2s ease-in-out infinite; }
+@keyframes micpulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(229,62,62,.55); } 50% { box-shadow: 0 0 0 6px rgba(229,62,62,0); } }
+/* AI marks (v8): one sparkle per AI field; twinkles while the AI works, still when done */
+.spk { display: inline-block; border: 0; background: transparent; color: inherit; padding: 4px; margin: -4px -4px -4px 0; cursor: pointer; opacity: .85; line-height: 1; vertical-align: 0; font-size: 13px; }
+.spk.busy { animation: twinkle 1.3s ease-in-out infinite; cursor: default; }
+@keyframes twinkle { 0%, 100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.12); } }
+/* bottom */
+.cbottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; display: flex; flex-direction: column; align-items: center; padding: 40px 0 calc(28px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(transparent, rgba(0,0,0,.55)); }
+.shwrap { position: relative; width: 92px; height: 92px; }
+.shutter { width: 92px; height: 92px; border-radius: 9999px; border: 6px solid #fff; background: transparent; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; touch-action: none; transition: transform .12s; -webkit-touch-callout: none; }
+.shutter > span { width: 70px; height: 70px; border-radius: 9999px; background: #fff; display: flex; align-items: center; justify-content: center; transition: all .15s; font-size: 38px; color: #fff; }
+.shutter > span svg { display: none; }
+.shutter.down { transform: scale(.94); }
+.shutter.talking { border-color: rgba(229,62,62,.35); box-shadow: 0 0 0 12px rgba(229,62,62,.25); }
+.shutter.talking > span { width: 80px; height: 80px; background: #e53e3e; }
+.shutter.talking > span svg { display: inline-block; }
+.ring { position: absolute; left: -9px; top: -9px; width: 110px; height: 110px; pointer-events: none; transform: rotate(-90deg); display: none; }
+.ring.on { display: block; }
+.ring circle { fill: none; stroke: #e53e3e; stroke-width: 4; stroke-linecap: round; }
+.hint { margin-top: 14px; min-height: 20px; font-size: 14px; font-weight: 600; opacity: .9; font-variant-numeric: tabular-nums; text-align: center; padding: 0 12px; }
+.thumb { position: absolute; left: 20px; bottom: calc(44px + env(safe-area-inset-bottom, 0px)); z-index: 4; width: 56px; height: 56px; border-radius: .4rem; border: 2px solid #fff; overflow: hidden; }
+.thumb img, .thumb svg { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* editor (QuickCaptureEditor.tsx) */
+.ed { position: absolute; inset: 0; z-index: 7; display: flex; flex-direction: column; justify-content: flex-end; background: rgba(0,0,0,.4); }
+.ed form { margin: 0 10px calc(10px + env(safe-area-inset-bottom, 0px)); max-height: 88%; overflow: auto; display: flex; flex-direction: column; gap: 10px; border-radius: 18px; padding: 12px; -webkit-user-select: text; user-select: text; }
+.ed .hd { display: flex; align-items: center; gap: 10px; }
+.ed label { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 4px; font-size: 12px; }
+.ed .lab { display: flex; align-items: center; gap: 2px; }
+.fld { width: 100%; border: 0; border-radius: 10px; background: #fff; color: #1a202c; padding: 10px 12px; font-size: 16px; font-family: inherit; outline: none; -webkit-appearance: none; appearance: none; }
+select.fld { background-image: linear-gradient(45deg, transparent 50%, #4a5568 50%), linear-gradient(135deg, #4a5568 50%, transparent 50%); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 26px; }
+.dwrap { position: relative; }
+.dwrap textarea { resize: none; min-height: 76px; padding-right: 52px; display: block; }
+.dmic { position: absolute; right: 6px; bottom: 6px; width: 40px; height: 40px; border-radius: 9999px; border: 0; background: #edf2f7; color: #4a5568; display: flex; align-items: center; justify-content: center; font-size: 22px; cursor: pointer; padding: 0; }
+.dmic.on { background: #e53e3e; color: #fff; animation: micpulse 1.2s ease-in-out infinite; }
+.ed .tw { display: flex; gap: 8px; }
+.ed .acts { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ed .rm { border: 0; background: transparent; padding: 8px 4px; font-size: 14px; font-weight: 600; color: #fed7d7; cursor: pointer; }
+.ed .ok { border: 0; border-radius: .4rem; background: #fff; color: #1a202c; padding: 10px 22px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.ed .said { margin: -4px 2px 0; }
+/* the job page Start opens, and the page behind Close */
+.page { position: absolute; inset: 0; z-index: 9; background: #f7fafc; color: #1a202c; display: flex; flex-direction: column; }
+.page .bar { padding: env(safe-area-inset-top, 0px) 12px 0; height: calc(56px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; gap: 8px; color: #fff; background: linear-gradient(90deg, #323741 0%, #20242b 100%); font-weight: 600; }
+.page .bar button { border: 0; background: transparent; color: #fff; cursor: pointer; display: flex; font-size: 24px; padding: 4px; }
+.page .bd { padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+.page h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.page .meta { font-size: 14px; color: #4a5568; }
+.page .pillw { align-self: flex-start; margin-top: 6px; font-size: 12px; font-weight: 600; border-radius: 9999px; padding: 2px 10px; background: #e6f4ec; color: #1b6e49; border: 1px solid #cde8d8; }
+.page .go { align-self: flex-start; margin-top: 12px; display: flex; align-items: center; gap: 8px; border: 0; border-radius: .2rem; background: #c8785f; color: #fff; padding: 10px 16px; font-size: 15px; font-weight: 600; cursor: pointer; }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) { .spk.busy, .micb.on, .dmic.on, .bars.idle i, .think.pulse { animation: none; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></symbol>
+  <symbol id="i-flash-off" viewBox="0 0 24 24"><path d="M3.27 3 2 4.27l5 5V13h3v9l3.58-6.14L17.73 20 19 18.73 3.27 3zM17 10h-4l4-8H7v2.18l8.46 8.46L17 10z"/></symbol>
+  <symbol id="i-flash-on" viewBox="0 0 24 24"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><path d="M7 7h10v10H7z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></symbol>
+  <symbol id="i-cam" viewBox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zM9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></symbol>
+</svg>
+
+<div id="app">
+  <div class="vf" id="vf"></div>
+  <div class="dim" id="dim"></div>
+  <div class="flash" id="flash"></div>
+  <div class="ctop">
+    <button type="button" class="cbtn glass" id="close" aria-label="Close"><svg class="i"><use href="#i-close"/></svg></button>
+    <button type="button" class="cbtn glass" id="torch" aria-label="Flash" aria-pressed="false" hidden><svg class="i"><use href="#i-flash-off"/></svg></button>
+  </div>
+  <div class="note glass" id="note" role="alert" hidden></div>
+  <div class="stack" id="stack"></div>
+  <div class="talk glass" id="talk">
+    <p id="words" aria-live="polite"></p>
+    <div class="trow"><span class="sp"></span><div class="bars" id="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><button type="button" class="stopb" id="stopb" aria-label="Stop"><svg class="i"><use href="#i-stop"/></svg></button></div>
+  </div>
+  <div class="ed" id="ed" hidden></div>
+  <div class="thumb" id="thumb" hidden></div>
+  <div class="cbottom">
+    <div class="shwrap">
+      <button type="button" class="shutter" id="shutter" aria-label="Tap: photo, then talk · Hold: talk"><span><svg class="i"><use href="#i-mic"/></svg></span></button>
+      <svg class="ring" id="ring" viewBox="0 0 110 110"><circle cx="55" cy="55" r="52" id="ringC"/></svg>
+    </div>
+    <div class="hint" id="hint"></div>
+  </div>
+  <div class="page" id="page" hidden></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  var ico = function (n) { return '<svg class="i"><use href="#i-' + n + '"/></svg>'; };
+
+  var HOLD_MS = 320, GUARD_MS = 700, WINDOW_MS = 4000, SILENCE_MS = 4000, TAIL_MS = 1000, AI_MS = 2500, FADE_MS = 12000, SWIPE_PX = 90, MAX_SHOWN = 3;
+  var REST = 'Tap: photo, then talk · Hold: talk';
+
+  /* ---- places and units (Guest House) ---- */
+  var PLACES = ['Mansion', 'Grounds', 'North Treatment Center'];
+  var UNITS = { Mansion: ['AC unit', 'Boiler'], Grounds: ['Irrigation pump'], 'North Treatment Center': ['Water heater'] };
+  var UNIT_WORDS = [[/\b(ac|a\/c|a c|air ?con\w*|hvac|cooling)\b/i, 'AC unit', 'Mansion'], [/\bboiler\b/i, 'Boiler', 'Mansion'], [/\b(pump|irrigation|sprinkler)s?\b/i, 'Irrigation pump', 'Grounds'], [/\bwater heater\b/i, 'Water heater', 'North Treatment Center']];
+  var HERE = 'Mansion'; /* where the phone is: stands in for the phone point */
+
+  /* ---- plain photo stand-ins (seed cards, and the camera when there is none) ---- */
+  var SCENES = {
+    outlet: '<svg viewBox="0 0 360 720" preserveAspectRatio="xMidYMid slice"><rect width="360" height="720" fill="#cdbfa6"/><rect y="560" width="360" height="160" fill="#8a6b4c"/><rect x="130" y="250" width="100" height="160" rx="8" fill="#f6f3ec" stroke="#a9a293" stroke-width="2"/><rect x="160" y="282" width="40" height="38" rx="10" fill="#e4dfd3"/><rect x="170" y="292" width="5" height="16" fill="#555"/><rect x="186" y="292" width="5" height="16" fill="#555"/><rect x="160" y="340" width="40" height="38" rx="10" fill="#e4dfd3"/><rect x="170" y="350" width="5" height="16" fill="#555"/><rect x="186" y="350" width="5" height="16" fill="#555"/></svg>',
+    rug: '<svg viewBox="0 0 360 720" preserveAspectRatio="xMidYMid slice"><rect width="360" height="720" fill="#6d5038"/><polygon points="40,180 330,220 320,640 20,600" fill="#8c2f2a"/><polygon points="70,215 300,246 292,600 50,570" fill="none" stroke="#d8b46a" stroke-width="8"/><polygon points="120,300 250,318 244,500 112,484" fill="#1f3c5a" opacity=".8"/></svg>',
+    room: '<svg viewBox="0 0 360 720" preserveAspectRatio="xMidYMid slice"><rect width="360" height="720" fill="#bfae94"/><polygon points="0,0 360,0 250,250 110,250" fill="#e8e2d6"/><polygon points="0,720 360,720 250,470 110,470" fill="#7a5a3e"/><polygon points="0,0 110,250 110,470 0,720" fill="#a99678"/><polygon points="360,0 250,250 250,470 360,720" fill="#b5a387"/><rect x="110" y="250" width="140" height="220" fill="#8f7d63"/></svg>'
+  };
+
+  /* ---- state ---- */
+  var caps = [], seq = 0, opened = null, saidEd = false, edDirty = {};
+  var press = null, lastRelease = 0, ses = null;
+
+  function clock() { var d = new Date(), h = d.getHours() % 12 || 12; return h + ':' + String(d.getMinutes()).padStart(2, '0') + ' ' + (d.getHours() < 12 ? 'AM' : 'PM'); }
+  function fmt(ms) { var s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+  function find(id) { for (var i = 0; i < caps.length; i++) if (caps[i].id === id) return caps[i]; return null; }
+  function joinW(a, b) { a = (a || '').trim(); b = (b || '').trim(); return a && b ? a + ' ' + b : a || b; }
+
+  function newCap(photo) {
+    var c = { id: ++seq, photo: photo, words: '', ai: 'idle', title: null, place: null, unit: null, marks: {}, edited: {}, time: clock(), hidden: false, named: false, said: false };
+    caps.push(c);
+    return c;
+  }
+  /* seeds: real Guest House jobs, so the card look and "You said" can be tried straight away */
+  (function seed() {
+    var a = newCap({ svg: SCENES.rug }); a.words = 'Securing rug with sticky tape'; a.ai = 'done'; a.title = 'Antique rug securing with sticky tape, damaged edge'; a.place = 'Grounds'; a.marks = { title: true, place: true }; a.seed = true;
+    var b = newCap({ svg: SCENES.outlet }); b.words = 'Tedt this outlet'; b.ai = 'done'; b.title = 'Outlet needs testing'; b.place = 'Mansion'; b.marks = { title: true, place: true }; b.seed = true;
+  })();
+
+  /* ---- the "AI": a short title from his words, the place and unit they name ---- */
+  function titleFrom(text) {
+    var s = text.split(/[,.;!?]| but | and then | so that /i)[0].trim();
+    s = s.replace(/^((so|um|uh|okay|ok|hey|alright|right)\b[ ,]*)+/i, '').replace(/\s+/g, ' ').trim();
+    var w = s.split(' ').slice(0, 6).join(' ');
+    return w ? w.charAt(0).toUpperCase() + w.slice(1) : '';
+  }
+  function runAI(c) {
+    c.ai = 'working'; c.said = false;
+    var at = c.aiRun = (c.aiRun || 0) + 1;
+    render(); if (opened === c.id) keepDraft(c, true);
+    setTimeout(function () {
+      if (c.aiRun !== at) return;
+      var text = c.words.toLowerCase(), place = null, unit = null;
+      PLACES.forEach(function (p) { if (!place && text.indexOf(p.toLowerCase()) >= 0) place = p; });
+      UNIT_WORDS.forEach(function (u) { if (!unit && u[0].test(text) && (!place || place === u[2])) { unit = u[1]; place = place || u[2]; } });
+      var t = c.words ? titleFrom(c.words) : '';
+      c.marks = {};
+      if (!c.edited.title) { if (t) { c.title = t; c.marks.title = true; } else c.title = 'Photo at ' + (c.place || place || HERE) + ' · ' + c.time; }
+      if (!c.edited.place) { c.place = place || HERE; c.marks.place = true; }
+      if (!c.edited.unit) { c.unit = unit; if (unit) c.marks.unit = true; }
+      c.ai = 'done'; c.named = true;
+      render(); if (opened === c.id) keepDraft(c, true);
+    }, AI_MS);
+  }
+
+  /* ---------- camera ---------- */
+  var video = null, track = null, micOK = false;
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  function note(t) { $('note').textContent = t || ''; $('note').hidden = !t; }
+  function startCamera() {
+    note('');
+    var md = navigator.mediaDevices;
+    if (!md || !md.getUserMedia) { noCamera(window.isSecureContext ? 'This browser can\'t use the camera here. Open the link in Chrome or Safari.' : 'Camera needs the https link.'); return; }
+    var v = { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } };
+    /* camera and mic asked together, so nothing pops up mid-hold; the mic track is dropped so speech can have the mic */
+    md.getUserMedia({ video: v, audio: true }).then(function (s) { return { s: s, mic: true }; }, function () { return md.getUserMedia({ video: v }).then(function (s) { return { s: s, mic: false }; }); })
+      .then(function (r) {
+        var s = r.s;
+        s.getAudioTracks().forEach(function (t) { s.removeTrack(t); t.stop(); });
+        micOK = r.mic;
+        if (!r.mic) note('Mic blocked: holding still works, but no words. Allow the mic in site settings.');
+        else if (!SR) note('This browser can\'t turn speech into words. Try Chrome on Android or Safari on iPhone.');
+        video = document.createElement('video');
+        video.muted = true; video.autoplay = true; video.playsInline = true; video.setAttribute('playsinline', '');
+        video.srcObject = s;
+        $('vf').innerHTML = ''; $('vf').appendChild(video);
+        var p = video.play(); if (p && p.catch) p.catch(function () {});
+        track = s.getVideoTracks()[0] || null;
+        setTimeout(function () {
+          try { var cap = track && track.getCapabilities && track.getCapabilities(); $('torch').hidden = !(cap && cap.torch); } catch (x) {}
+        }, 500);
+      })
+      .catch(function (e) { noCamera(e && e.name === 'NotAllowedError' ? 'Camera blocked: allow it in site settings, then reopen.' : 'No camera found.'); });
+  }
+  function noCamera(t) { video = null; $('vf').innerHTML = SCENES.room; note(t); }
+  function stopCamera() { if (video && video.srcObject) video.srcObject.getTracks().forEach(function (t) { t.stop(); }); video = null; track = null; $('torch').hidden = true; }
+  $('torch').addEventListener('click', function () {
+    var on = this.getAttribute('aria-pressed') !== 'true', b = this;
+    if (!track) return;
+    track.applyConstraints({ advanced: [{ torch: on }] }).then(function () {
+      b.setAttribute('aria-pressed', String(on)); b.innerHTML = ico(on ? 'flash-on' : 'flash-off');
+    }).catch(function () {});
+  });
+  function snap() {
+    if (!video || !video.videoWidth) return { svg: SCENES.room };
+    var c = document.createElement('canvas'), w = video.videoWidth, h = video.videoHeight, k = Math.min(1, 900 / Math.max(w, h));
+    c.width = Math.round(w * k); c.height = Math.round(h * k);
+    c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+    return { img: c.toDataURL('image/jpeg', .8) };
+  }
+  function pic(p) { return p.img ? '<img alt="" src="' + p.img + '">' : p.svg; }
+  function flashThumb(p) {
+    var f = $('flash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
+    $('thumb').innerHTML = pic(p); $('thumb').hidden = false;
+  }
+
+  /* ---------- speech: one session at a time ----------
+     kind 'window': tap → listens WINDOW_MS; nothing heard = ends quietly; words = becomes 'open'.
+     kind 'open'  : card mic / after words: ends on stop, or SILENCE_MS after the last word.
+     kind 'hold'  : while the shutter is held; release = TAIL_MS more, then ends.
+     Every stop waits TAIL_MS so the last words land. Chrome may end recognition on its own after a pause:
+     it is restarted and the words so far are kept. */
+  var BARS = [0.45, 0.7, 0.9, 1, 0.8, 1, 0.9, 0.7, 0.45];
+  function bump() {
+    var bars = $('bars'); bars.classList.remove('idle'); bars.classList.add('up');
+    [].forEach.call(bars.children, function (b, k) { b.style.height = (6 + 28 * BARS[k] * (0.7 + Math.random() * 0.3)) + 'px'; });
+    clearTimeout(bump.t);
+    bump.t = setTimeout(function () { bars.classList.remove('up'); [].forEach.call(bars.children, function (b) { b.style.height = '6px'; }); if (ses) bars.classList.add('idle'); }, 90);
+  }
+  var FAKE = ['The AC is rattling, louder when it cycles', 'Tedt this outlet', 'Securing rug with sticky tape', 'Boiler pressure is low in the Mansion'], fakeIx = 0;
+
+  function listen(kind, opts) {
+    if (ses) endNow();
+    var s = ses = { kind: kind, cap: opts.cap || null, editor: !!opts.editor, base: opts.base || '', prefix: '', fin: '', int: '', t0: Date.now(), last: Date.now(), heard: false, ending: false, done: false, onText: opts.onText, onDone: opts.onDone };
+    s.text = function () { return joinW(s.prefix, joinW(s.fin, s.int)); };
+    if (SR && micOK) startRec(s); else startFake(s);
+    s.tick = setInterval(function () { tickSes(s); }, 150);
+    showSes();
+    return s;
+  }
+  function merge(a, b) { /* Android repeats earlier finals inside later ones */
+    a = a.trim(); b = b.trim();
+    if (!a) return b; if (!b) return a;
+    if (b.toLowerCase().indexOf(a.toLowerCase()) === 0) return b;
+    return a + ' ' + b;
+  }
+  function startRec(s) {
+    var r;
+    try { r = new SR(); } catch (x) { startFake(s); return; }
+    r.lang = 'en-US'; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
+    s.rec = r; s.fin = ''; s.int = '';
+    r.onresult = function (ev) {
+      if (s.rec !== r || s.done) return;
+      var fin = '', intr = '';
+      for (var i = 0; i < ev.results.length; i++) { var t = ev.results[i][0].transcript; if (ev.results[i].isFinal) fin = merge(fin, t); else intr = joinW(intr, t); }
+      s.fin = fin; s.int = intr;
+      if (s.text()) { s.heard = true; s.last = Date.now(); bump(); }
+      say(s);
+    };
+    r.onerror = function (ev) {
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { micOK = false; note('Mic blocked: holding still works, but no words. Allow the mic in site settings.'); }
+    };
+    r.onend = function () {
+      if (s.rec !== r) return;
+      s.prefix = joinW(s.prefix, joinW(s.fin, s.int)); s.fin = ''; s.int = ''; s.rec = null;
+      if (s.done) return;
+      if (s.ending || !micOK) { finish(s); return; }
+      setTimeout(function () { if (!s.done && !s.rec) startRec(s); }, 120);
+    };
+    try { r.start(); } catch (x) { s.rec = null; startFake(s); }
+  }
+  function startFake(s) {
+    var words = FAKE[fakeIx++ % FAKE.length].split(' '), i = 0;
+    s.fake = setInterval(function () {
+      if (s.done || s.ending) { clearInterval(s.fake); return; }
+      if (Date.now() - s.t0 < 900) return;
+      if (i >= words.length) { clearInterval(s.fake); return; }
+      s.prefix = joinW(s.prefix, words[i++]); s.heard = true; s.last = Date.now(); bump(); say(s);
+    }, 280);
+  }
+  function tickSes(s) {
+    if (s.done) return;
+    var now = Date.now();
+    if (s.kind === 'window') {
+      if (s.heard) { s.kind = 'open'; $('ring').classList.remove('on'); }
+      else if (now - s.t0 >= WINDOW_MS) { finish(s); return; }
+    }
+    if (s.kind === 'open' && !s.ending && now - s.last >= SILENCE_MS) { stopSoon(s, 0); }
+    hint();
+  }
+  function stopSoon(s, tail) {
+    if (!s || s.done || s.ending) return;
+    s.ending = true; hint();
+    setTimeout(function () {
+      if (s.done) return;
+      if (s.rec) { try { s.rec.stop(); } catch (x) { finish(s); } setTimeout(function () { finish(s); }, 1500); }
+      else finish(s);
+    }, tail);
+  }
+  function endNow() { if (ses) finish(ses); }
+  function finish(s) {
+    if (s.done) return;
+    s.done = true; clearInterval(s.tick); clearInterval(s.fake);
+    var r = s.rec; s.rec = null; if (r) { try { r.abort(); } catch (x) {} }
+    var text = s.text();
+    if (ses === s) ses = null;
+    showSes();
+    if (s.onDone) s.onDone(text);
+  }
+  function say(s) {
+    var full = s.text();
+    if (!s.editor) {
+      var head = joinW(s.prefix, s.fin);
+      $('words').innerHTML = esc(head) + (s.int ? ' <span class="int">' + esc(s.int) + '</span>' : '');
+    }
+    if (s.onText) s.onText(joinW(s.base, full));
+  }
+  function showSes() {
+    var s = ses, cam = s && !s.editor;
+    $('talk').classList.toggle('on', !!cam);
+    $('stopb').hidden = !cam || s.kind === 'hold';
+    $('shutter').classList.toggle('talking', !!(s && s.kind === 'hold'));
+    $('dim').style.opacity = s && s.kind === 'hold' ? 0.3 : 0;
+    $('bars').classList.toggle('idle', !!cam);
+    if (!cam) $('words').textContent = '';
+    if (!s || s.kind !== 'window') $('ring').classList.remove('on');
+    hint(); render();
+    if (opened) { var b = document.querySelector('.dmic'); if (b) b.classList.toggle('on', !!(s && s.editor)); }
+  }
+  function runRing(ms) {
+    var ring = $('ring'), c = $('ringC'), L = 2 * Math.PI * 52;
+    c.style.strokeDasharray = L; c.style.transition = 'none'; c.style.strokeDashoffset = 0;
+    ring.classList.add('on'); void ring.getBoundingClientRect();
+    c.style.transition = 'stroke-dashoffset ' + ms + 'ms linear'; c.style.strokeDashoffset = L;
+  }
+  var tempHint = null;
+  function hint() {
+    var s = ses, h = $('hint'), el = s ? Date.now() - s.t0 : 0;
+    if (s && !s.editor) {
+      h.textContent = s.ending ? 'Saving…'
+        : s.kind === 'hold' ? fmt(el) + ' · let go to save'
+        : s.kind === 'window' ? 'Listening… ' + Math.max(1, Math.ceil((WINDOW_MS - el) / 1000))
+        : fmt(el) + ' · listening';
+      return;
+    }
+    h.textContent = tempHint || REST;
+  }
+  $('stopb').addEventListener('click', function () { stopSoon(ses, TAIL_MS); });
+
+  /* what a finished session does to its card */
+  function wordsInto(c) {
+    var base = c.words;
+    return {
+      cap: c,
+      onText: function (t) { c.live = t; renderSoon(); },
+      onDone: function (heard) {
+        c.live = null;
+        var t = heard.trim();
+        if (t) { c.words = joinW(base, t); runAI(c); }
+        else if (c.ai === 'idle') runAI(c);
+        else render();
+        armFade(c);
+      }
+    };
+  }
+
+  /* ---------- shutter: under HOLD_MS = tap, longer = hold (useShutterPress.ts) ---------- */
+  var sh = $('shutter');
+  sh.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  sh.addEventListener('pointerdown', function (e) {
+    if (e.button > 0) return;
+    e.preventDefault();
+    if (press || !$('ed').hidden || Date.now() - lastRelease < GUARD_MS) return;
+    try { sh.setPointerCapture(e.pointerId); } catch (x) {}
+    if (ses) endNow(); /* a new photo ends the last one's listening, with what it heard */
+    var p = press = { holding: false, photo: snap() };
+    sh.classList.add('down');
+    flashThumb(p.photo);
+    p.holdT = setTimeout(function () {
+      p.holding = true;
+      p.cap = newCap(p.photo);
+      listen('hold', wordsInto(p.cap));
+    }, HOLD_MS);
+  });
+  function release() {
+    var p = press; if (!p) return;
+    press = null; clearTimeout(p.holdT); sh.classList.remove('down'); lastRelease = Date.now();
+    setTimeout(function () { $('thumb').hidden = true; }, 250);
+    if (p.holding) { if (ses && ses.cap === p.cap) stopSoon(ses, TAIL_MS); return; }
+    var c = newCap(p.photo);
+    listen('window', wordsInto(c));
+    runRing(WINDOW_MS);
+  }
+  sh.addEventListener('pointerup', release);
+  sh.addEventListener('pointercancel', release);
+  sh.addEventListener('lostpointercapture', release);
+
+  /* ---------- cards ---------- */
+  function armFade(c) {
+    if (c.seed) return;
+    clearTimeout(c.fadeT);
+    c.fadeT = setTimeout(function () {
+      if (opened === c.id || (ses && ses.cap === c)) { armFade(c); return; }
+      var el = document.querySelector('.card[data-id="' + c.id + '"]');
+      if (el) el.classList.add('fading');
+      setTimeout(function () { c.hidden = true; render(); }, 300);
+    }, FADE_MS);
+  }
+  function spk(id, f, busy) {
+    return busy ? '<span class="spk busy" aria-label="AI is filling this in">' + ico('spark') + '</span>'
+      : '<button type="button" class="spk" data-spk="' + id + '" aria-label="Filled in by AI">' + ico('spark') + '</button>';
+  }
+  function saidText(c) { return c.words ? 'You said: “' + esc(c.words) + '”' : 'From the photo only'; }
+  function cardHTML(c, small) {
+    var listening = ses && ses.cap === c, live = listening ? c.live : null, w = live != null ? live : c.words, name, place = '';
+    if (c.ai === 'done' && !listening) {
+      name = '<div class="nm' + (c.named ? ' named' : '') + '">' + esc(c.title) + (c.marks.title ? spk(c.id, 'title') : '') + '</div>';
+      var bits = [];
+      if (c.place) bits.push(esc(c.place) + (c.marks.place ? spk(c.id, 'place') : ''));
+      if (c.unit) bits.push(esc(c.unit) + (c.marks.unit ? spk(c.id, 'unit') : ''));
+      place = bits.join(' · ');
+    } else if (c.ai === 'working' && !listening) {
+      name = '<div class="nm' + (w ? ' heard' : '') + '">' + (w ? '“' + esc(w) + '”' : '<span class="think"></span>') + spk(c.id, 'title', true) + '</div>';
+      place = '<span class="phd"></span>' + spk(c.id, 'place', true) + ' · <span class="phd u"></span>' + spk(c.id, 'unit', true);
+    } else {
+      name = '<div class="nm' + (w ? ' heard' : '') + '">' + (w ? '“' + esc(w) + '”' : '<span class="think pulse"></span>') + '</div>';
+      place = c.ai === 'done' ? esc([c.place, c.unit].filter(Boolean).join(' · ')) : '';
+    }
+    return '<div class="card' + (small ? ' small' : '') + '" data-id="' + c.id + '"><div class="row">' +
+      '<div class="ph">' + pic(c.photo) + '</div>' +
+      '<div class="tx">' + name + (!small && place ? '<div class="pl">' + place + '</div>' : '') +
+      (!small && c.said && c.ai === 'done' ? '<div class="said">' + saidText(c) + '</div>' : '') + '</div>' +
+      (!small ? '<button type="button" class="micb' + (listening ? ' on' : '') + '" data-mic="' + c.id + '" aria-label="' + (listening ? 'Stop' : 'Talk') + '">' + ico('mic') + '</button>' +
+        '<button type="button" class="start" data-start="' + c.id + '">' + ico('play') + 'Start</button>' : '') +
+      '</div></div>';
+  }
+  var dragging = false, pending = false, rq = 0;
+  function renderSoon() { if (!rq) rq = requestAnimationFrame(function () { rq = 0; render(); }); }
+  function render() {
+    if (dragging) { pending = true; return; }
+    var vis = caps.filter(function (c) { return !c.hidden; }).slice(-MAX_SHOWN).reverse();
+    $('stack').innerHTML = vis.map(function (c, i) { return cardHTML(c, i > 0); }).join('');
+    caps.forEach(function (c) { c.named = false; });
+  }
+
+  var stackEl = $('stack'), drag = null;
+  stackEl.addEventListener('pointerdown', function (e) {
+    var el = e.target.closest('.card'); if (!el || e.target.closest('button')) return;
+    drag = { el: el, x0: e.clientX, dx: 0, id: +el.dataset.id }; dragging = true;
+    try { el.setPointerCapture(e.pointerId); } catch (x) {}
+    el.style.transition = 'none';
+  });
+  stackEl.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    drag.dx = e.clientX - drag.x0;
+    drag.el.style.transform = 'translateX(' + drag.dx + 'px)';
+    drag.el.style.opacity = 1 - Math.min(0.8, Math.abs(drag.dx) / 200);
+  });
+  function dragEnd() {
+    if (!drag) return;
+    var d = drag; drag = null; dragging = false;
+    d.el.style.transition = ''; d.el.style.transform = ''; d.el.style.opacity = '';
+    var c = find(d.id);
+    if (c && Math.abs(d.dx) > SWIPE_PX) { c.hidden = true; if (ses && ses.cap === c) endNow(); render(); return; }
+    if (c && Math.abs(d.dx) <= 6) { openEditor(c); return; }
+    if (pending) { pending = false; render(); }
+  }
+  stackEl.addEventListener('pointerup', dragEnd);
+  stackEl.addEventListener('pointercancel', dragEnd);
+  stackEl.addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.spk) { var c = find(+b.dataset.spk); c.said = !c.said; render(); return; }
+    if (b.dataset.start) { startJob(find(+b.dataset.start), b); return; }
+    if (b.dataset.mic) {
+      var mc = find(+b.dataset.mic);
+      if (ses && ses.cap === mc) { stopSoon(ses, TAIL_MS); return; }
+      var o = wordsInto(mc); o.base = mc.words;
+      var s = listen('open', o); s.base = mc.words;
+    }
+  });
+
+  /* ---------- editor (tap a card) ---------- */
+  var PH_NAME = 'Naming…', PH_FIND = 'Finding…';
+  function openEditor(c) {
+    if (ses) endNow();
+    opened = c.id; saidEd = false; edDirty = {};
+    drawEditor(c);
+  }
+  function drawEditor(c) {
+    var done = c.ai === 'done', working = c.ai === 'working';
+    var mark = function (f) { return working ? spk(c.id, f, true) : done && c.marks[f] ? spk(c.id, f) : ''; };
+    var name = done ? c.title || '' : '';
+    var units = UNITS[c.place] || [];
+    $('ed').innerHTML = '<form class="glass" role="dialog" aria-modal="true" aria-label="Edit" autocomplete="off">' +
+      '<div class="hd"><div class="ph">' + pic(c.photo) + '</div><label><span class="lab">Name' + mark('title') + '</span><input class="fld" id="edName" value="' + esc(name) + '" placeholder="' + (working ? PH_NAME : '') + '"></label></div>' +
+      (saidEd ? '<div class="said">' + saidText(c) + '</div>' : '') +
+      '<label>Description<div class="dwrap"><textarea class="fld" id="edDesc" rows="2">' + esc(c.words) + '</textarea>' +
+      '<button type="button" class="dmic" id="dmic" aria-label="Talk">' + ico('mic') + '</button></div></label>' +
+      '<div class="tw"><label><span class="lab">Place' + mark('place') + '</span><select class="fld" id="edPlace"><option value="">' + (working ? PH_FIND : '') + '</option>' +
+      PLACES.map(function (p) { return '<option' + (p === c.place && done ? ' selected' : '') + '>' + p + '</option>'; }).join('') + '</select></label>' +
+      '<label><span class="lab">Unit' + mark('unit') + '</span><select class="fld" id="edUnit"><option value="">' + (working ? PH_FIND : 'None') + '</option>' +
+      units.map(function (u) { return '<option' + (u === c.unit && done ? ' selected' : '') + '>' + u + '</option>'; }).join('') + '</select></label></div>' +
+      '<div class="acts"><button type="button" class="rm" id="edRm">Remove request</button><button type="submit" class="ok">Save</button></div></form>';
+    $('ed').hidden = false;
+  }
+  function keepDraft(c, onlyDirty) {
+    if ($('ed').hidden) return;
+    var v = { edName: $('edName').value, edDesc: $('edDesc').value, edPlace: $('edPlace').value, edUnit: $('edUnit').value };
+    drawEditor(c);
+    Object.keys(v).forEach(function (k) {
+      if (onlyDirty && !edDirty[k]) return;
+      if (k === 'edPlace') { $('edPlace').value = v[k]; fillUnits(v.edUnit); }
+      else if (k === 'edUnit') { if ([].some.call($('edUnit').options, function (o) { return o.value === v[k]; })) $('edUnit').value = v[k]; }
+      else $(k).value = v[k];
+    });
+    var b = $('dmic'); if (b) b.classList.toggle('on', !!(ses && ses.editor));
+  }
+  function fillUnits(keep) {
+    var list = UNITS[$('edPlace').value] || [], sel = $('edUnit');
+    sel.innerHTML = '<option value="">None</option>' + list.map(function (u) { return '<option>' + u + '</option>'; }).join('');
+    if (list.indexOf(keep) >= 0) sel.value = keep;
+  }
+  $('ed').addEventListener('input', function (e) { if (e.target.id) edDirty[e.target.id] = true; });
+  $('ed').addEventListener('change', function (e) {
+    if (e.target.id) edDirty[e.target.id] = true;
+    if (e.target.id === 'edPlace') { edDirty.edUnit = true; fillUnits($('edUnit').value); }
+  });
+  $('ed').addEventListener('click', function (e) {
+    var c = find(opened); if (!c) return;
+    if (e.target === $('ed')) { closeEditor(); return; }
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.spk) { saidEd = !saidEd; keepDraft(c); return; }
+    if (b.id === 'dmic') {
+      if (ses && ses.editor) { stopSoon(ses, TAIL_MS); return; }
+      var ta = $('edDesc'), base = ta.value;
+      edDirty.edDesc = true;
+      listen('open', { editor: true, base: base, onText: function (t) { var x = $('edDesc'); if (x) { x.value = t; x.scrollTop = x.scrollHeight; } }, onDone: function () { var x = $('dmic'); if (x) x.classList.remove('on'); } });
+      b.classList.add('on');
+      return;
+    }
+    if (b.id === 'edRm') { c.hidden = true; closeEditor(); }
+  });
+  $('ed').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var c = find(opened); if (ses && ses.editor) endNow();
+    var n = $('edName').value.trim(), t = $('edDesc').value.trim(), p = $('edPlace').value || null, u = $('edUnit').value || null;
+    var wordsChanged = t !== c.words.trim();
+    if (edDirty.edName && n && n !== (c.title || '')) { c.title = n; c.edited.title = true; c.marks.title = false; }
+    if (edDirty.edPlace && p !== c.place) { c.place = p; c.edited.place = true; c.marks.place = false; }
+    if (edDirty.edUnit && u !== c.unit) { c.unit = u; c.edited.unit = true; c.marks.unit = false; }
+    if (wordsChanged) c.words = t;
+    if (c.ai !== 'done' && c.edited.title) { c.ai = 'done'; c.aiRun = (c.aiRun || 0) + 1; }
+    closeEditor();
+    if (wordsChanged && t && !(c.edited.title && c.edited.place && c.edited.unit)) runAI(c);
+  });
+  function closeEditor() {
+    if (ses && ses.editor) endNow();
+    var c = find(opened); opened = null; $('ed').hidden = true; $('ed').innerHTML = '';
+    if (c) armFade(c); render();
+  }
+
+  /* ---------- Start: the app moves on to the job (/work/:id/working); Close leaves the camera ---------- */
+  function startJob(c, b) {
+    b.disabled = true; if (ses) endNow();
+    setTimeout(function () {
+      stopCamera();
+      var w = $('page');
+      w.innerHTML = '<div class="bar"><button type="button" id="back" aria-label="Back">' + ico('back') + '</button>Working</div>' +
+        '<div class="bd"><h2>' + esc(c.title || c.words || 'Quick Start') + '</h2><div class="meta">' + esc([c.place, c.unit].filter(Boolean).join(' · ') || 'Guest House') + '</div>' +
+        (c.words ? '<div class="meta">' + esc(c.words) + '</div>' : '') + '<span class="pillw">In progress</span></div>';
+      w.hidden = false;
+      $('back').addEventListener('click', function () { w.hidden = true; c.hidden = true; render(); startCamera(); });
+    }, 400);
+  }
+  $('close').addEventListener('click', function () {
+    if (ses) endNow(); stopCamera();
+    var w = $('page');
+    w.innerHTML = '<div class="bar">Work</div><div class="bd"><button type="button" class="go" id="reopen">' + ico('cam') + 'Quick Start</button></div>';
+    w.hidden = false;
+    $('reopen').addEventListener('click', function () { w.hidden = true; startCamera(); });
+  });
+  document.addEventListener('visibilitychange', function () { if (document.hidden && ses) endNow(); });
+
+  hint(); render(); startCamera();
+})();
+</script>
+</body>
+</html>
